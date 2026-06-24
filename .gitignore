@@ -2,7 +2,6 @@ node_modules
 .env
 prisma.config.ts
 dist/
-
-# /src/generated/prisma
+/src/generated/
 # /src/generated/prisma
 # /src/generated/prisma
