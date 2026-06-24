@@ -25,6 +25,28 @@ async function claimJob() {
     return processedJob;
 }
 
+async function markDone(jobId, result) {
+    const updateJob = await prisma.job.update({
+        where: { id: jobId },
+        data: {
+            status: 'done',
+            result: result,
+            finishedAt: new Date()
+        }
+    });
+}
+
+async function markFailed(jobId, error) {
+    const updateJob = await prisma.job.update({
+        where: { id: jobId },
+        data: {
+            status: 'failed',
+            error: error,
+            finishedAt: new Date()
+        }
+    });
+}
+
 async function workerLoop() {
     const sleep = (ms)=> new Promise(resolve => setTimeout(resolve,ms));
     while(true) {
@@ -34,6 +56,11 @@ async function workerLoop() {
             continue
         }
         console.log(`Processing job ${job.id} of type ${job.type}`);
-        
+
+        try {
+            await markDone(job.id,{success: true});
+        } catch(err) {
+            await markFailed(job.id,err.message);
+        }
     }
 }
