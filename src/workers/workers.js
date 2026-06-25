@@ -1,4 +1,6 @@
 const prisma = require('../db/client');
+const { Client } = require('pg');
+require('dotenv').config();
 
 async function claimJob() {
     const processedJob = await prisma.$transaction(async(tx)=>{
@@ -48,7 +50,31 @@ async function markFailed(jobId, error) {
 }
 
 async function workerLoop() {
-    const sleep = (ms)=> new Promise(resolve => setTimeout(resolve,ms));
+    const client = new Client({connectionString: process.env.DATABASE_DIRECT_URL});
+    await client.connect();
+    let job = await claimJob();
+    while(job) {
+        console.log(`Processing existing job ${job.id} of type ${job.type}`);
+        try {
+            await markDone(job.id,{success:true});
+        } catch(err) {
+            await markFailed(job.id,err.message);
+        }
+        job = await claimJob();
+    }
+    console.log('Existing jobs drained, listening for new jobs');
+    await client.query('LISTEN new_job');
+    client.on('notification',async ()=>{
+        const job = await claimJob();
+        if(!job) return;
+        console.log(`Processing job ${job.id} of type ${job.type}`);
+        try {
+            await markDone(job.id,{success:true});
+        } catch(err) {
+            await markFailed(job.id,err.message);
+        }
+    });
+    /*const sleep = (ms)=> new Promise(resolve => setTimeout(resolve,ms));
     while(true) {
         const job = await claimJob();
         if(!job) {
@@ -56,11 +82,11 @@ async function workerLoop() {
             continue
         }
         console.log(`Processing job ${job.id} of type ${job.type}`);
-
         try {
             await markDone(job.id,{success: true});
         } catch(err) {
             await markFailed(job.id,err.message);
         }
-    }
+    }*/
 }
+workerLoop().catch(console.error)

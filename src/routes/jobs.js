@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router()
 const prisma = require('../db/client');
+const {Client} = require('pg');
+require('dotenv').config();
+const notifyClient = new Client({connectionString: process.env.DATABASE_DIRECT_URL});
+notifyClient.connect().then(()=>console.log('Notify client connected'));
 
 router.post("/",async (req,res)=>{
     const {type,payload} = req.body;
@@ -14,6 +18,7 @@ router.post("/",async (req,res)=>{
                 payload:payload || {}
             }
         });
+        await notifyClient.query('NOTIFY new_job');
         res.status(201).json({id:newJob.id,status:newJob.status});
     } catch(err) {
         console.error("Database save error",err);
