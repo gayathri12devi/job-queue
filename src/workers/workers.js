@@ -1,6 +1,11 @@
 const prisma = require('../db/client');
 const { Client } = require('pg');
 require('dotenv').config();
+const handlers = {
+    generate_report: require('./handlers/generate_report'),
+    compress_text: require('./handlers/compress_text'),
+    hash_password: require('./handlers/hash_password')
+}
 
 async function claimJob() {
     const processedJob = await prisma.$transaction(async(tx)=>{
@@ -52,13 +57,42 @@ async function markFailed(jobId, error) {
 async function workerLoop() {
     const client = new Client({connectionString: process.env.DATABASE_DIRECT_URL});
     await client.connect();
+    setInterval(async () => {
+        await client.query('SELECT 1')
+    }, 4 * 60 * 1000)
+    client.on('error', async (err) => {
+        console.error('PG client error:', err.message)
+        try {
+            await client.connect()
+            await client.query('LISTEN new_job')
+        } catch (e) {
+            console.error('Reconnect failed:', e.message)
+            setTimeout(async () => {
+                await client.connect()
+                await client.query('LISTEN new_job')
+            }, 5000)
+        }
+    })
     let job = await claimJob();
     while(job) {
         console.log(`Processing existing job ${job.id} of type ${job.type}`);
         try {
-            await markDone(job.id,{success:true});
+            const handler = handlers[job.type]
+            if(!handler) throw new Error(`Unkown job type: ${job.type}`);
+            const result = await handler(job.payload);
+            await markDone(job.id,result);
         } catch(err) {
-            await markFailed(job.id,err.message);
+            if(job.attempts<job.maxRetries) {
+                await prisma.job.update({
+                    where: {id:job.id},
+                    data: {
+                        status: 'pending',
+                        startedAt: null
+                    }
+                })
+            } else {
+                await markFailed(job.id,err.message);
+            }
         }
         job = await claimJob();
     }
@@ -69,9 +103,22 @@ async function workerLoop() {
         if(!job) return;
         console.log(`Processing job ${job.id} of type ${job.type}`);
         try {
-            await markDone(job.id,{success:true});
+            const handler = handlers[job.type]
+            if(!handler) throw new Error(`Unkown job type: ${job.type}`);
+            const result = await handler(job.payload);
+            await markDone(job.id,result);
         } catch(err) {
-            await markFailed(job.id,err.message);
+            if(job.attempts<job.maxRetries) {
+                await prisma.job.update({
+                    where: {id:job.id},
+                    data: {
+                        status: 'pending',
+                        startedAt: null
+                    }
+                })
+            } else {
+                await markFailed(job.id,err.message);
+            }
         }
     });
     /*const sleep = (ms)=> new Promise(resolve => setTimeout(resolve,ms));

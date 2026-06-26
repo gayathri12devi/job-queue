@@ -3,5 +3,4 @@ node_modules
 prisma.config.ts
 dist/
 /src/generated/
-# /src/generated/prisma
-# /src/generated/prisma
+reports/*.txt
