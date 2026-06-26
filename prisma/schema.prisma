@@ -24,6 +24,7 @@ model Job {
   createdAt  DateTime  @default(now())
   startedAt  DateTime? 
   finishedAt DateTime?
+  nextRunAt DateTime @default(now())
 
   @@index([status])
 }

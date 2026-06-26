@@ -12,7 +12,8 @@ async function claimJob() {
         const jobRaw = await tx.$queryRaw`
         SELECT * FROM "Job"
         WHERE status = 'pending'
-        ORDER BY "createdAt" ASC LIMIT 1
+        AND "nextRunAt" <= NOW()
+        ORDER BY "nextRunAt" ASC,"createdAt" ASC LIMIT 1
         FOR UPDATE SKIP LOCKED
         `;
         if(jobRaw.length == 0) return null;
@@ -83,11 +84,14 @@ async function workerLoop() {
             await markDone(job.id,result);
         } catch(err) {
             if(job.attempts<job.maxRetries) {
+                const delaySec = Math.pow(2,job.attempts - 1);
                 await prisma.job.update({
                     where: {id:job.id},
                     data: {
                         status: 'pending',
-                        startedAt: null
+                        startedAt: null,
+                        finishedAt: null,
+                        nextRunAt: new Date(Date.now() + delaySec*1000)
                     }
                 })
             } else {
@@ -108,12 +112,15 @@ async function workerLoop() {
             const result = await handler(job.payload);
             await markDone(job.id,result);
         } catch(err) {
+            const delaySec = Math.pow(2,job.attempts - 1);
             if(job.attempts<job.maxRetries) {
                 await prisma.job.update({
                     where: {id:job.id},
                     data: {
                         status: 'pending',
-                        startedAt: null
+                        startedAt: null,
+                        finishedAt: null,
+                        nextRunAt: new Date(Date.now() + delaySec*1000)
                     }
                 })
             } else {
